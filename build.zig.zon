@@ -1,7 +1,7 @@
 .{
     .name = .aipipe,
     .version = "0.1.0",
-    .fingerprint = 0xa5c4fde399d2870c,
+    .fingerprint = 0xd896d472d5f14c5a,
     .minimum_zig_version = "0.15.0",
     .paths = .{
         "build.zig",
