@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  test-zig:
+    name: Zig tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - name: Run tests
+        run: zig build test
+
+      - name: Build (smoke test)
+        run: zig build -Doptimize=ReleaseFast
+
+      - name: CLI smoke test
+        run: |
+          echo "hello world" | ./zig-out/bin/aipipe hash
+          echo "hello world" | ./zig-out/bin/aipipe hash --sha256
+          echo '```python
+          print("hi")
+          ```' | ./zig-out/bin/aipipe fence
+          ./zig-out/bin/aipipe --version
+
+  build:
+    name: Build - ${{ matrix.zig-target }}
+    runs-on: ${{ matrix.os }}
+    needs: [test-zig]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            zig-target: x86_64-linux-gnu
+          # Linux aarch64
+          - os: ubuntu-latest
+            zig-target: aarch64-linux-gnu
+          # macOS Apple Silicon
+          - os: macos-latest
+            zig-target: aarch64-macos-none
+          # macOS Intel
+          - os: macos-latest
+            zig-target: x86_64-macos-none
+          # Windows x86_64
+          - os: windows-latest
+            zig-target: x86_64-windows-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Zig binary
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.zig-target }}
+
+      - name: Build wheel
+        run: python scripts/build_wheel.py --target ${{ matrix.zig-target }} --zig-binary zig-out/bin/aipipe${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.zig-target }}
+          path: dist/*.whl
+
+  release:
+    name: Create GitHub Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep 'version' build.zig.zon | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: List wheels
+        run: ls -la dist/
+
+      - name: Create tag and release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          files: dist/*.whl
+          generate_release_notes: true
+          make_latest: true
