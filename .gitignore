@@ -1,0 +1,9 @@
+zig-out/
+zig-cache/
+.zig-cache/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.whl
