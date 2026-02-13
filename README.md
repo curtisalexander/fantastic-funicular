@@ -4,23 +4,44 @@ Fast utilities for AI agent workflows — written in [Zig](https://ziglang.org/)
 
 ## Install
 
-```bash
-# Install from a GitHub Release (once published)
-uv tool install aipipe --from "aipipe @ https://github.com/curtisalexander/fantastic-funicular/releases/download/v0.1.0/aipipe-0.1.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+Precompiled wheels are available at each [GitHub Release](https://github.com/curtisalexander/fantastic-funicular/releases). No Zig toolchain is required to install — `uv` will automatically select the correct wheel for your platform.
 
-# Or install from a local wheel
-uv tool install aipipe --from ./dist/aipipe-0.1.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+### As a standalone CLI tool (recommended)
+
+```bash
+uv tool install aipipe \
+  --find-links https://github.com/curtisalexander/fantastic-funicular/releases/expanded_assets/v0.1.0
 ```
 
-Pick the wheel matching your platform:
+### Run directly without installation
 
-| Platform            | Wheel suffix                                            |
-|---------------------|---------------------------------------------------------|
-| Linux x86_64        | `manylinux_2_17_x86_64.manylinux2014_x86_64`           |
-| Linux aarch64       | `manylinux_2_17_aarch64.manylinux2014_aarch64`         |
-| macOS Apple Silicon | `macosx_11_0_arm64`                                    |
-| macOS Intel         | `macosx_10_12_x86_64`                                  |
-| Windows x86_64      | `win_amd64`                                            |
+```bash
+uvx --from aipipe \
+  --find-links https://github.com/curtisalexander/fantastic-funicular/releases/expanded_assets/v0.1.0 \
+  aipipe hash --help
+```
+
+### Install into current environment
+
+```bash
+uv pip install aipipe \
+  --find-links https://github.com/curtisalexander/fantastic-funicular/releases/expanded_assets/v0.1.0
+```
+
+### Upgrading
+
+Pass `--upgrade` to install a newer version or `--reinstall` for the same version.
+
+```bash
+uv tool install aipipe --upgrade \
+  --find-links https://github.com/curtisalexander/fantastic-funicular/releases/expanded_assets/v0.1.0
+```
+
+### Uninstalling
+
+```bash
+uv tool uninstall aipipe
+```
 
 ## Commands
 
@@ -77,7 +98,7 @@ This project uses a pattern similar to how [ruff](https://github.com/astral-sh/r
 
 ### Prerequisites
 
-- [Zig](https://ziglang.org/download/) 0.14+
+- [Zig](https://ziglang.org/download/) 0.15+
 - [Python](https://www.python.org/) 3.9+
 
 ### Build locally
@@ -112,4 +133,4 @@ python scripts/build_wheel.py
 
 ## License
 
-[Apache-2.0](LICENSE)
+[MIT](LICENSE)
