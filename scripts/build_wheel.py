@@ -159,16 +159,7 @@ def build_wheel(binary_path, platform_tag, out_dir, project_root="."):
         whl.writestr(top_level_arcname, top_level_content)
         record_entries.append((top_level_arcname, sha256_digest_bytes(top_level_content), len(top_level_content)))
 
-        # 6. Add entry_points.txt
-        entry_points_content = (
-            f"[console_scripts]\n"
-            f"aipipe = aipipe.__main__:_run\n"
-        ).encode("utf-8")
-        entry_points_arcname = f"{dist_info_name}/entry_points.txt"
-        whl.writestr(entry_points_arcname, entry_points_content)
-        record_entries.append((entry_points_arcname, sha256_digest_bytes(entry_points_content), len(entry_points_content)))
-
-        # 7. Add RECORD (must be last, and its own entry has no hash)
+        # 6. Add RECORD (must be last, and its own entry has no hash)
         record_buf = io.StringIO()
         writer = csv.writer(record_buf, lineterminator="\n")
         for arcname, digest, size in record_entries:
