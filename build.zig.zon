@@ -1,5 +1,5 @@
 .{
-    .name = .@"aipipe",
+    .name = "aipipe",
     .version = "0.1.0",
     .fingerprint = 0xa5c4fde399d2870c,
     .minimum_zig_version = "0.14.0",
