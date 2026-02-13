@@ -51,7 +51,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Args {
         .help;
 
     var args = Args{ .command = command };
-    var positionals = std.ArrayList([]const u8).init(allocator);
+    var positionals: std.ArrayList([]const u8) = .empty;
 
     var i: usize = 2;
     while (i < argv.len) : (i += 1) {
@@ -74,11 +74,11 @@ fn parseArgs(allocator: std.mem.Allocator) !Args {
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             args.command = .help;
         } else if (!std.mem.startsWith(u8, arg, "-")) {
-            try positionals.append(arg);
+            try positionals.append(allocator, arg);
         }
     }
 
-    args.positionals = try positionals.toOwnedSlice();
+    args.positionals = try positionals.toOwnedSlice(allocator);
     return args;
 }
 
@@ -87,17 +87,24 @@ fn parseArgs(allocator: std.mem.Allocator) !Args {
 /// Hash: content-addressable hashing of files or stdin.
 /// Useful for caching LLM responses keyed by input content.
 fn cmdHash(args: Args) !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch {};
 
     if (args.positionals.len == 0) {
         // Read from stdin
-        const stdin = std.io.getStdIn();
+        const stdin = std.fs.File.stdin();
         const content = try stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 256);
         try hashAndPrint(stdout, content, "-", args.algorithm);
     } else {
         for (args.positionals) |path| {
             const content = readFile(path) catch |err| {
-                try std.io.getStdErr().writer().print("aipipe: {s}: {}\n", .{ path, err });
+                var stderr_buf: [256]u8 = undefined;
+                var stderr_w = std.fs.File.stderr().writer(&stderr_buf);
+                const stderr = &stderr_w.interface;
+                stderr.print("aipipe: {s}: {}\n", .{ path, err }) catch {};
+                stderr.flush() catch {};
                 continue;
             };
             try hashAndPrint(stdout, content, path, args.algorithm);
@@ -105,7 +112,7 @@ fn cmdHash(args: Args) !void {
     }
 }
 
-fn hashAndPrint(writer: anytype, content: []const u8, name: []const u8, algorithm: HashAlgorithm) !void {
+fn hashAndPrint(writer: *std.Io.Writer, content: []const u8, name: []const u8, algorithm: HashAlgorithm) !void {
     switch (algorithm) {
         .xxhash => {
             const hash = std.hash.XxHash64.hash(0, content);
@@ -130,9 +137,13 @@ fn readFile(path: []const u8) ![]const u8 {
 
 /// Fence: extract or wrap fenced code blocks in LLM output.
 fn cmdFence(args: Args) !void {
-    const stdin = std.io.getStdIn();
+    const stdin = std.fs.File.stdin();
     const content = try stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 256);
-    const stdout = std.io.getStdOut().writer();
+
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch {};
 
     switch (args.fence_mode) {
         .extract => try extractFences(stdout, content, args.fence_lang),
@@ -140,7 +151,7 @@ fn cmdFence(args: Args) !void {
     }
 }
 
-fn extractFences(writer: anytype, content: []const u8, lang_filter: ?[]const u8) !void {
+fn extractFences(writer: *std.Io.Writer, content: []const u8, lang_filter: ?[]const u8) !void {
     var in_fence = false;
     var fence_lang: []const u8 = "";
     var block_count: usize = 0;
@@ -183,7 +194,7 @@ fn extractFences(writer: anytype, content: []const u8, lang_filter: ?[]const u8)
     }
 }
 
-fn wrapFence(writer: anytype, content: []const u8, lang: ?[]const u8) !void {
+fn wrapFence(writer: *std.Io.Writer, content: []const u8, lang: ?[]const u8) !void {
     try writer.writeAll("```");
     if (lang) |l| {
         try writer.writeAll(l);
@@ -199,12 +210,16 @@ fn wrapFence(writer: anytype, content: []const u8, lang: ?[]const u8) !void {
 
 /// Prompt: concatenate files into a prompt with headers and optional token counting.
 fn cmdPrompt(args: Args) !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch {};
+
     var total_tokens: usize = 0;
 
     if (args.positionals.len == 0) {
         // Read from stdin
-        const stdin = std.io.getStdIn();
+        const stdin = std.fs.File.stdin();
         const content = try stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 256);
         try stdout.writeAll(content);
         if (args.count_tokens) {
@@ -213,7 +228,11 @@ fn cmdPrompt(args: Args) !void {
     } else {
         for (args.positionals, 0..) |path, idx| {
             const content = readFile(path) catch |err| {
-                try std.io.getStdErr().writer().print("aipipe: {s}: {}\n", .{ path, err });
+                var stderr_buf: [256]u8 = undefined;
+                var stderr_w = std.fs.File.stderr().writer(&stderr_buf);
+                const stderr = &stderr_w.interface;
+                stderr.print("aipipe: {s}: {}\n", .{ path, err }) catch {};
+                stderr.flush() catch {};
                 continue;
             };
 
@@ -237,7 +256,11 @@ fn cmdPrompt(args: Args) !void {
     }
 
     if (args.count_tokens) {
-        try std.io.getStdErr().writer().print("~{d} tokens\n", .{total_tokens});
+        var stderr_buf: [256]u8 = undefined;
+        var stderr_w = std.fs.File.stderr().writer(&stderr_buf);
+        const stderr = &stderr_w.interface;
+        try stderr.print("~{d} tokens\n", .{total_tokens});
+        try stderr.flush();
     }
 }
 
@@ -249,7 +272,11 @@ fn estimateTokens(content: []const u8) usize {
 // ─── Help ───────────────────────────────────────────────────────────────────
 
 fn printHelp() !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch {};
+
     try stdout.writeAll(
         \\aipipe - fast utilities for AI agent workflows
         \\
@@ -285,14 +312,18 @@ fn printHelp() !void {
 }
 
 fn printVersion() !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [256]u8 = undefined;
+    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch {};
+
     try stdout.print("aipipe {s}\n", .{version});
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -317,8 +348,8 @@ test "estimateTokens" {
 }
 
 test "extractFences" {
-    var output = std.ArrayList(u8).init(std.testing.allocator);
-    defer output.deinit();
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
 
     const input =
         \\Here is some code:
@@ -332,39 +363,41 @@ test "extractFences" {
     ;
 
     // Extract all
-    try extractFences(output.writer(), input, null);
-    try std.testing.expectEqualStrings("print(\"hello\")\n\nconsole.log(\"hi\")\n", output.items);
+    try extractFences(&aw.writer, input, null);
+    try std.testing.expectEqualStrings("print(\"hello\")\n\nconsole.log(\"hi\")\n", aw.written());
 
     // Extract only python
-    output.clearRetainingCapacity();
-    try extractFences(output.writer(), input, "python");
-    try std.testing.expectEqualStrings("print(\"hello\")\n", output.items);
+    aw.clearRetainingCapacity();
+    try extractFences(&aw.writer, input, "python");
+    try std.testing.expectEqualStrings("print(\"hello\")\n", aw.written());
 }
 
 test "wrapFence" {
-    var output = std.ArrayList(u8).init(std.testing.allocator);
-    defer output.deinit();
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
 
-    try wrapFence(output.writer(), "x = 1", "python");
-    try std.testing.expectEqualStrings("```python\nx = 1\n```\n", output.items);
+    try wrapFence(&aw.writer, "x = 1", "python");
+    try std.testing.expectEqualStrings("```python\nx = 1\n```\n", aw.written());
 }
 
 test "hashAndPrint xxhash" {
-    var output = std.ArrayList(u8).init(std.testing.allocator);
-    defer output.deinit();
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
 
-    try hashAndPrint(output.writer(), "hello\n", "test.txt", .xxhash);
+    try hashAndPrint(&aw.writer, "hello\n", "test.txt", .xxhash);
+    const result = aw.written();
     // Should be 16 hex chars + two spaces + filename + newline
-    try std.testing.expect(output.items.len > 20);
-    try std.testing.expect(std.mem.endsWith(u8, output.items, "  test.txt\n"));
+    try std.testing.expect(result.len > 20);
+    try std.testing.expect(std.mem.endsWith(u8, result, "  test.txt\n"));
 }
 
 test "hashAndPrint sha256" {
-    var output = std.ArrayList(u8).init(std.testing.allocator);
-    defer output.deinit();
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
 
-    try hashAndPrint(output.writer(), "hello\n", "test.txt", .sha256);
+    try hashAndPrint(&aw.writer, "hello\n", "test.txt", .sha256);
+    const result = aw.written();
     // SHA-256 = 64 hex chars + two spaces + filename + newline
-    try std.testing.expect(output.items.len == 64 + 2 + 8 + 1);
-    try std.testing.expect(std.mem.endsWith(u8, output.items, "  test.txt\n"));
+    try std.testing.expect(result.len == 64 + 2 + 8 + 1);
+    try std.testing.expect(std.mem.endsWith(u8, result, "  test.txt\n"));
 }
